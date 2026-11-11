@@ -423,6 +423,13 @@ Se l'obbligo dovesse tornare, la scelta va rivista.
 **Da verificare su Narendi:** cifratura attiva per default, dati e log conservati e per quanto,
 federazione effettivamente disattivata, collegamento a Keycloak.
 
+```
+lawful_access_request
+  id, authority, legal_basis, document_ref, received_at,
+  scope (jsonb: person, tipo di dati, periodo), legal_review_by, decision (accepted|rejected),
+  approved_by[], executed_at, delivered_at, user_notified_at, notes
+```
+
 ### 9.2 Bot AI nelle chat di Narendi (idea, da sviluppare a parte)
 
 Bot AI (supporto, assistenza) invitabili nelle chat personali e di gruppo. Da progettare in una
@@ -437,13 +444,6 @@ sessione dedicata; qui solo i principi che lo rendono compatibile con l'end-to-e
 - Minori: bot solo se il genitore lo autorizza e se le regole d'età dei servizi AI lo permettono.
 - Consumi (token) addebitati a chi ha invitato il bot o alla sua organizzazione, tramite l'Account
   (servizio `narendi-ai`).
-
-```
-lawful_access_request
-  id, authority, legal_basis, document_ref, received_at,
-  scope (jsonb: person, tipo di dati, periodo), legal_review_by, decision (accepted|rejected),
-  approved_by[], executed_at, delivered_at, user_notified_at, notes
-```
 
 ## 10. Migrazione da Cassy sul social (decisione aperta 3)
 
