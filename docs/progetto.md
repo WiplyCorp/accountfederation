@@ -1,6 +1,6 @@
 # Wiply Account – documento di progetto
 
-> Stato: **bozza v0.3** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
+> Stato: **bozza v0.4** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
 > Repository: `WiplyCorp/accountfederation`
 
 Questo documento descrive il sistema di account unico per tutti i prodotti Wiply:
@@ -27,6 +27,7 @@ all'Account: *"questa persona, in questo contesto, ha diritto a questo servizio,
 | Cassy AI | cassy.wiply.net | LibreChat + LiteLLM, login Keycloak, piani venduti dal social | Personale o federato (contesto azienda), limiti per utente via LiteLLM |
 | Wiply Assistant | assistant.wiply.net | Password unica per il pannello, tenant su PostgreSQL | Fase 1b: login Keycloak, tenant = organizzazione, ruoli |
 | Social | wiply.net | Sngine con utenti e pagamenti propri | Fork autonomo collegato al login unico (ultimo passo) |
+| Narendi | – | Server di messaggistica su Matrix | Login unico con Keycloak; chat private end-to-end per tutti (sez. 9.1) |
 | Wiply Studio | – | – | Servizio attivabile dall'Account |
 | SaaS futuri (gestionale…) | – | – | Nascono già sul modello Account |
 
@@ -197,9 +198,18 @@ a un fornitore esterno (es. AgeVerif) che conferma "maggiorenne sì/no" e restit
 - Lo stesso servizio si può usare dove la legge chiede di verificare l'età anche dei ragazzi
   (es. per confermare che non siano sotto il minimo assoluto).
 
-**Supervisione, non sorveglianza (deciso).** Il genitore vede consumi, tempo d'uso, contatti e
-segnalazioni di sicurezza (senza contenuto), ma **non legge mai i messaggi privati**. I messaggi
-privati si aprono solo con la procedura di accesso legale della sezione 9.1, uguale per tutti gli utenti.
+**Supervisione, non sorveglianza (deciso).** Il genitore vede consumi, tempo d'uso, elenco dei
+contatti e segnalazioni di sicurezza (senza contenuto), ma **non legge mai i messaggi privati**.
+Le chat private dei minori sono end-to-end come quelle di tutti (sez. 9.1): nessuna chiave speciale.
+
+**Regole strette sui contatti dei minori (deciso)**, applicate da Narendi e dal social:
+- un minore riceve messaggi e inviti **solo da contatti approvati dal genitore**; niente messaggi
+  da sconosciuti, nessuna richiesta in attesa visibile al minore senza approvazione;
+- niente stanze pubbliche o federate con server esterni, salvo autorizzazione esplicita del genitore;
+- profilo privato e non ricercabile per default; nessuna pubblicità profilata;
+- tasto "segnala" sempre visibile: l'app del minore invia a Wiply la conversazione segnalata
+  (unico modo in cui vediamo un contenuto privato), il genitore riceve l'avviso senza il contenuto;
+- il genitore può bloccare un contatto o sospendere la messaggistica in ogni momento.
 
 **Dati in più nel modello**
 ```
@@ -371,46 +381,53 @@ Altre regole:
 - ogni azione di amministrazione finisce in `audit_log`;
 - dati in UE (Parigi), coerente con il GDPR.
 
-### 9.1 Accesso legale ai messaggi privati (deciso)
+### 9.1 Messaggi privati e richieste delle autorità (deciso)
 
-**Regola:** i messaggi privati (social, e in futuro le chat di Cassy) sono cifrati con una chiave
-personale dell'utente. Nessuno, né il genitore né il personale Wiply, li legge nell'uso normale.
-Si aprono **solo** su richiesta ufficiale con valide ragioni legali, di preferenza un
-provvedimento di un tribunale.
+**Posizionamento:** rispettiamo la legge europea e collaboriamo con le autorità per ciò che abbiamo,
+ma i sistemi sono costruiti per **non avere** i messaggi degli utenti: nemmeno Wiply può leggerli.
 
-**Come funziona tecnicamente (proposta): seconda serratura, non sostituzione della chiave.**
-- Ogni utente ha una chiave dati personale. Questa chiave viene chiusa due volte:
-  1. con la chiave dell'utente (uso normale);
-  2. con una **chiave di accesso legale** di Wiply, che non sta su nessun server.
-- La chiave di accesso legale è divisa in parti (schema "2 su 3"): ad esempio una al CEO,
-  una al legale/DPO, una in cassetta di sicurezza. Servono almeno due persone insieme per usarla.
-  Nessuno da solo, e nessun attacco a un solo server, può aprire i messaggi.
-- Non si "sovrascrive" la chiave dell'utente: sovrascriverla gli farebbe perdere l'accesso ai
-  propri messaggi e lascerebbe traccia evidente. La seconda serratura apre senza toccare la sua.
+**Chat private (Narendi / Matrix, e messaggi privati del social): end-to-end vero, per tutti, minori compresi.**
+- Si usa la cifratura standard di Matrix (Olm/Megolm), attiva per default su tutte le chat private.
+- Le chiavi esistono solo sui dispositivi degli utenti; il backup delle chiavi sul server è
+  cifrato con la chiave di recupero dell'utente, che noi non abbiamo.
+- Nessuna chiave di accesso per Wiply, per i genitori o per le autorità.
+- Il social (fork di Sngine) userà Narendi per i messaggi privati, invece di una messaggistica propria.
+- Il contenuto privato arriva a Wiply in un solo caso: quando un utente **segnala** una conversazione,
+  la sua app ci invia i messaggi segnalati.
+
+**Cosa possiamo consegnare con un ordine valido** (tribunale o ordine europeo "e-Evidence",
+regolamento UE 2023/1543): solo ciò che abbiamo.
+- Dati dell'account, indirizzi IP, orari di accesso, eventualmente con chi si è comunicato.
+- Post pubblici, e contenuti non cifrati end-to-end come le **chat di Cassy** (un'AI deve leggere
+  i messaggi per rispondere: sono cifrate sul server, non end-to-end).
+- Regola di **minimizzazione**: conservare il meno possibile e per il minor tempo possibile
+  (es. log di IP e accessi con scadenza breve), così anche ciò che possiamo consegnare è poco.
 
 **Procedura**
-1. Arriva la richiesta (provvedimento del tribunale o ordine europeo di produzione delle prove,
-   regolamento UE 2023/1543 "e-Evidence"). Viene registrata in `lawful_access_request`.
-2. Il legale verifica validità, autorità, perimetro (quale utente, quali conversazioni, quale periodo).
-   Richieste senza base legale valida vengono respinte e registrate.
-3. Due custodi della chiave aprono **solo** il perimetro richiesto, su una macchina isolata.
-4. Si consegna all'autorità solo quanto richiesto; tutto finisce in un registro non modificabile.
-5. L'utente viene avvisato a pratica chiusa, salvo divieto dell'autorità.
-6. Statistiche annuali (numero di richieste ricevute, accolte, respinte) pubblicate in un rapporto
-   di trasparenza.
+1. La richiesta viene registrata in `lawful_access_request`.
+2. Il legale verifica validità, autorità e perimetro; richieste senza base legale valida vengono
+   respinte e registrate.
+3. Estrazione solo del perimetro richiesto, con doppia approvazione (due persone), in un registro
+   non modificabile.
+4. L'utente viene avvisato a pratica chiusa, salvo divieto dell'autorità.
+5. Rapporto di trasparenza annuale: richieste ricevute, accolte, respinte.
 
-**Cosa comporta**
-- Non potremo dire che i messaggi sono "cifrati end-to-end" in senso stretto: andrà scritto con
-  chiarezza nell'informativa privacy (cifrati, apribili solo con la procedura legale).
-- La seconda serratura va prevista **fin dalla nascita** della messaggistica nel fork del social:
-  aggiungerla dopo vorrebbe dire ricifrare tutti i messaggi.
-- Tempi di risposta e casi d'urgenza (e-Evidence prevede termini stretti) da definire col legale.
+**Comunicazione:** per le chat private si può dire "end-to-end" e "nemmeno noi possiamo leggerle".
+Per Cassy no: si dirà "cifrate e accessibili solo con procedura legale". Testi pubblici da far
+rivedere al legale.
+
+**Da seguire:** il regolamento europeo sugli abusi sui minori ("Chat Control") è ancora in discussione;
+nella versione approvata dal Consiglio a fine 2025 la scansione dei messaggi è volontaria.
+Se l'obbligo dovesse tornare, la scelta va rivista.
+
+**Da verificare su Narendi:** cifratura attiva per default, dati e log conservati e per quanto,
+federazione con server esterni (e blocco per i minori), collegamento a Keycloak.
 
 ```
 lawful_access_request
   id, authority, legal_basis, document_ref, received_at,
-  scope (jsonb: person, conversazioni, periodo), legal_review_by, decision (accepted|rejected),
-  custodians[], executed_at, delivered_at, user_notified_at, notes
+  scope (jsonb: person, tipo di dati, periodo), legal_review_by, decision (accepted|rejected),
+  approved_by[], executed_at, delivered_at, user_notified_at, notes
 ```
 
 ## 10. Migrazione da Cassy sul social (decisione aperta 3)
@@ -443,7 +460,8 @@ Proposta in tre passi:
 | 5 | Cassy federato: più contesti in LibreChat | Prova tecnica prima della fase 4 | da verificare |
 | 6 | Se l'Account non risponde | Cache fino a 15 minuti, poi blocco delle funzioni a pagamento | **deciso** |
 | 7 | PayPal | Solo se richiesto dai clienti, dopo il lancio di Stripe | da decidere |
-| 8 | Minori: cosa vede il genitore | Mai i messaggi privati; apertura solo con procedura di accesso legale (sez. 9.1). Tabella d'età per Paese ancora da far compilare a un legale | **deciso** (tabella d'età: da fare) |
+| 8 | Minori: cosa vede il genitore | Mai i messaggi privati; contatti, consumi e segnalazioni sì; regole strette sui contatti (sez. 4.2). Tabella d'età per Paese ancora da far compilare a un legale | **deciso** (tabella d'età: da fare) |
+| 10 | Messaggi privati e autorità | End-to-end vero per tutti su Narendi (Matrix), minori compresi; alle autorità solo metadati, contenuti pubblici e chat di Cassy (sez. 9.1) | **deciso** |
 | 9 | Verifica che il genitore sia maggiorenne | Servizi esterni (es. AgeVerif), interfaccia unica, salviamo solo l'esito | **deciso** |
 
 ## 13. Ordine di lavoro
