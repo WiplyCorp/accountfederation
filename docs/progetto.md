@@ -1,6 +1,6 @@
 # Wiply Account – documento di progetto
 
-> Stato: **bozza v0.1** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
+> Stato: **bozza v0.2** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
 > Repository: `WiplyCorp/accountfederation`
 
 Questo documento descrive il sistema di account unico per tutti i prodotti Wiply:
@@ -103,8 +103,8 @@ Perché non mettere i diritti dentro il token di Keycloak: i token vivono minuti
 possono ritirare; i diritti cambiano con i pagamenti. Tenerli separati evita che Keycloak
 dipenda dall'Account (e viceversa) per fare il login.
 
-**Se l'Account non risponde:** il prodotto usa l'ultima risposta in cache fino a un massimo
-(proposta: 15 minuti), poi nega l'accesso alle funzioni a pagamento. Da decidere per prodotto.
+**Se l'Account non risponde (deciso):** il prodotto usa l'ultima risposta in cache fino a un
+massimo di 15 minuti, poi nega l'accesso alle funzioni a pagamento.
 
 ## 4. Tipi di account
 
@@ -112,7 +112,8 @@ dipenda dall'Account (e viceversa) per fare il login.
 |---|---|---|---|
 | Persona | privato | personale | `billing_account` di tipo `person` |
 | Professionista | partita IVA, da solo | personale, fattura alla partita IVA | `person` con dati fiscali (P.IVA verificata VIES) |
-| Organizzazione | azienda con dipendenti | centralizzato: a posti, piano fisso o consumi | `organization` + organizzazione Keycloak |
+| Organizzazione | azienda con dipendenti | centralizzato: a posti, piano fisso o consumi | `organization` (tipo `company`) + organizzazione Keycloak |
+| Famiglia | genitore/tutore con figli minorenni | il genitore paga per tutti | `organization` (tipo `family`), vedi sezione 4.2 |
 
 Regole:
 - Una persona ha **un solo login per sempre** e può appartenere a **più organizzazioni**.
@@ -132,6 +133,78 @@ Regole:
 | `member` | usare i servizi che gli sono assegnati |
 
 I prodotti possono avere ruoli propri in aggiunta (es. in Assistant: chi modifica la base di conoscenza).
+
+### 4.2 Minori e account famiglia
+
+Un minore sotto l'età del consenso digitale non può avere un account autonomo: deve
+**agganciarsi all'account di un genitore o tutore**, che funziona come una piccola organizzazione
+di tipo `family`.
+
+**Ruoli nella famiglia**
+
+| Ruolo | Può |
+|---|---|
+| `guardian` (genitore/tutore, maggiorenne) | autorizzare o negare ogni servizio, impostare limiti (orari, tempo, contenuti, modelli AI), vedere consumi e attività, pagare gli abbonamenti, revocare tutto in un clic |
+| `minor` | usare solo i servizi autorizzati, entro i limiti impostati; non può pagare né lasciare la famiglia da solo |
+
+Possono esserci due `guardian` (entrambi i genitori). Un `guardian` è anche una persona normale,
+con i suoi servizi personali e le sue aziende.
+
+**Regole d'età per Paese e per servizio (non per prodotto in blocco)**
+
+L'Account tiene una tabella di regole, compilata e firmata da un legale:
+
+| Campo | Significato |
+|---|---|
+| `country` | Paese di residenza dichiarato |
+| `service_code` | social, cassy, studio, … |
+| `age_alone` | da quest'età si usa il servizio da soli |
+| `age_with_consent` | da quest'età si usa con l'autorizzazione del genitore |
+| (sotto `age_with_consent`) | **vietato**, anche con il consenso del genitore |
+
+Esempi solo indicativi, **da far verificare a un legale**: l'età del consenso digitale GDPR
+è 14 anni in Italia, 13 in Estonia, 15 in Francia, 16 in Germania e Irlanda; in alcuni Paesi
+(es. Australia, dal dicembre 2025) i social sono vietati sotto i 16 anni **senza eccezioni per il
+consenso dei genitori**; in UE si discute un'età minima per i social uguale per tutti.
+
+> ⚠️ **Limite importante.** L'autorizzazione del genitore vale **solo dove la legge la prevede**
+> (cioè tra `age_with_consent` e `age_alone`). Non può far usare un servizio sotto un'età minima
+> fissata dalla legge, e una liberatoria del genitore non toglie a Wiply gli obblighi verso i minori
+> (GDPR, Digital Services Act: niente pubblicità profilata ai minori, impostazioni di privacy
+> massime per default, ecc.). Il sistema quindi applica le regole in modo automatico e non lascia
+> margine di "sblocco" al genitore sotto il minimo di legge. Vale anche per le nostre condizioni
+> d'uso e per quelle dei fornitori dei modelli AI di Cassy, che possono fissare età minime proprie
+> (da verificare).
+
+**Flusso**
+1. Alla registrazione Keycloak chiede la data di nascita e il Paese.
+2. Se l'età è sotto `age_alone` per tutti i servizi richiesti, l'account nasce **in attesa del genitore**:
+   il ragazzo inserisce l'email del genitore, che riceve un invito.
+3. Il genitore entra (o si registra) e **dimostra di essere maggiorenne**: proposta minima con
+   una verifica della carta su Stripe (senza addebito); in futuro, verifica d'identità o il
+   portafoglio d'identità digitale europeo.
+4. Il genitore sceglie servizio per servizio cosa autorizzare e con quali limiti. Ogni consenso
+   viene registrato (chi, quando, versione delle condizioni, metodo di verifica) e si può revocare.
+5. Al compimento di `age_alone` il ragazzo viene avvisato e l'account diventa **autonomo**: il
+   genitore perde la supervisione, i dati restano del ragazzo. Se il genitore pagava, l'abbonamento
+   resta sul conto del genitore finché uno dei due non lo sposta.
+
+**Supervisione, non sorveglianza.** Proposta: il genitore vede consumi, tempo d'uso, contatti e
+segnalazioni, ma non legge i messaggi privati, salvo segnalazioni di sicurezza. Da decidere con il legale
+(decisione aperta 8).
+
+**Dati in più nel modello**
+```
+person          + birthdate, country, age_status (adult|minor_supervised|minor_pending)
+organization    + kind (company|family)
+membership      + ruoli guardian | minor
+age_rule        country, service_code, age_alone, age_with_consent, source, reviewed_at
+guardian_consent
+  id, guardian_person_id, minor_person_id, service_code, limits (jsonb),
+  terms_version, verification_method, granted_at, revoked_at
+```
+Nella risposta `entitlements` compare `"supervised": true` con i limiti del genitore, così ogni
+prodotto applica le impostazioni per minori (es. nel social: profilo privato, niente messaggi da sconosciuti).
 
 ## 5. Modello dati (prima versione)
 
@@ -221,9 +294,9 @@ Note:
 3. Il login della persona **resta**: perde solo il contesto di quell'azienda.
    Il suo eventuale Cassy personale non viene toccato.
 
-### 6.5 Disattivare un servizio (vedi decisione aperta 1)
-- **Pausa**: `entitlement.status = paused`, dati conservati, nessun addebito (o addebito ridotto).
-- **Cancellazione**: `pending_deletion` per un periodo di ripensamento (proposta: 30 giorni),
+### 6.5 Disattivare un servizio (deciso: pausa e cancellazione come scelte separate)
+- **Pausa**: `entitlement.status = paused`, dati conservati senza limite di tempo, nessun addebito (o addebito ridotto).
+- **Cancellazione**: `pending_deletion` per un periodo di ripensamento di 30 giorni,
   poi il prodotto riceve l'evento `service.purge` e cancella i dati. L'audit conserva solo il fatto.
 
 ### 6.6 Cancellazione dell'account (GDPR)
@@ -264,7 +337,17 @@ Primo prodotto a nascere sul modello, prima ancora che l'Account sia completo:
 
 ## 9. Sicurezza e affidabilità
 
-**Keycloak diventa un punto unico critico** (decisione aperta 2). Prima di spostarci tutti i prodotti:
+**Keycloak diventa un punto unico critico** (deciso: prima si collauda, poi gli si affida il compito vero).
+
+Prove da superare **prima** di collegare Assistant e l'Account a Keycloak in produzione,
+su un ambiente di prova (copia del realm, nessun utente reale):
+1. ripristino completo da backup su un server pulito, con tempo misurato;
+2. spegnimento improvviso di Keycloak: cosa vedono i prodotti, quanto tornano su da soli;
+3. aggiornamento di versione di Keycloak con ritorno indietro;
+4. carico: molti login contemporanei;
+5. avvisi di monitoraggio che arrivano davvero (email/telefono).
+
+Requisiti permanenti:
 - backup automatici del database di Keycloak (giornalieri + prima di ogni aggiornamento), con prova di ripristino;
 - monitoraggio esterno di `auth.wiply.net` e avvisi;
 - aggiornamenti di sicurezza regolari, console di amministrazione non esposta pubblicamente (o protetta da IP/VPN);
@@ -300,19 +383,22 @@ Proposta in tre passi:
 
 | # | Domanda | Proposta | Stato |
 |---|---|---|---|
-| 1 | Disattivare = pausa o cancellazione? | Entrambe: pausa senza limiti di tempo; cancellazione con 30 giorni di ripensamento | da decidere |
-| 2 | Keycloak punto unico critico | Backup + monitoraggio obbligatori prima della fase 3; secondo nodo prima del social | da decidere |
+| 1 | Disattivare = pausa o cancellazione? | Entrambe, come scelte separate: pausa senza limiti di tempo; cancellazione con 30 giorni di ripensamento | **deciso** |
+| 2 | Keycloak punto unico critico | Collaudo su ambiente di prova (sez. 9) prima di affidargli il lavoro vero; backup e monitoraggio permanenti; secondo nodo prima del social | **deciso** |
 | 3 | Migrazione clienti Cassy dal social | Importazione + convivenza + passaggio al rinnovo (sez. 10) | da decidere |
 | 4 | Prezzi: posti, consumo, piano fisso | Assistant: piano fisso + minuti a consumo; Cassy aziendale: posti + token oltre soglia; SaaS gestionale: posti | da decidere |
 | 5 | Cassy federato: più contesti in LibreChat | Prova tecnica prima della fase 4 | da verificare |
-| 6 | Se l'Account non risponde | Cache fino a 15 minuti, poi blocco delle funzioni a pagamento | da decidere |
+| 6 | Se l'Account non risponde | Cache fino a 15 minuti, poi blocco delle funzioni a pagamento | **deciso** |
 | 7 | PayPal | Solo se richiesto dai clienti, dopo il lancio di Stripe | da decidere |
+| 8 | Minori: età per Paese e servizio, cosa vede il genitore | Account famiglia (sez. 4.2); tabella d'età compilata da un legale; supervisione senza lettura dei messaggi privati | da verificare con un legale |
+| 9 | Verifica che il genitore sia maggiorenne | Verifica carta su Stripe senza addebito; poi identità digitale UE | da decidere |
 
 ## 13. Ordine di lavoro
 
 1. **Questo documento** (architettura, modello dati, flussi, domande aperte). ← siamo qui
-2. Wiply Assistant fase 1b sul modello (sez. 8).
-3. Wiply Account v1: profilo, organizzazioni con membri e inviti, servizi attivi, API `entitlements`.
+2. Collaudo di Keycloak su ambiente di prova (sez. 9), poi Wiply Assistant fase 1b sul modello (sez. 8).
+3. Wiply Account v1: profilo, organizzazioni con membri e inviti, servizi attivi, API `entitlements`;
+   data di nascita e Paese raccolti fin da subito; account famiglia prima dell'apertura del social ai minori.
 4. Cassy federato con limiti per utente tramite LiteLLM (sez. 7).
 5. Pagamenti Stripe dall'Account: abbonamenti, posti, consumi, IVA.
 6. Social: fork autonomo di Sngine collegato al login unico.
