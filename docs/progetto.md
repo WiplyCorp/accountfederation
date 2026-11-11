@@ -1,6 +1,6 @@
 # Wiply Account – documento di progetto
 
-> Stato: **bozza v0.5** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
+> Stato: **bozza v0.6** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
 > Repository: `WiplyCorp/accountfederation`
 
 Questo documento descrive il sistema di account unico per tutti i prodotti Wiply:
@@ -25,7 +25,7 @@ all'Account: *"questa persona, in questo contesto, ha diritto a questo servizio,
 | Prodotto | Indirizzo | Oggi | Domani |
 |---|---|---|---|
 | Cassy AI | cassy.wiply.net | LibreChat + LiteLLM, login Keycloak, piani venduti dal social | Personale o federato (contesto azienda), limiti per utente via LiteLLM |
-| Wiply Assistant | assistant.wiply.net | Password unica per il pannello, tenant su PostgreSQL | Fase 1b: login Keycloak, tenant = organizzazione, ruoli |
+| Wiply Assistant | assistant.wiply.net | Due fork: `assistant` e `wiply-voice`; password unica per il pannello, tenant su PostgreSQL | Tutto accorpato in `assistant`; file su S3 cifrati con KMS; fase 1b: login Keycloak, tenant = organizzazione, ruoli |
 | Social | wiply.net | Sngine con utenti e pagamenti propri | Fork autonomo collegato al login unico (ultimo passo) |
 | Narendi | – | Server di messaggistica su Matrix, chiuso (nessuna federazione con altri server, come Signal) | Login unico con Keycloak; chat private end-to-end per tutti (sez. 9.1); bot AI su invito (sez. 9.2) |
 | Wiply Studio | – | – | Servizio attivabile dall'Account |
@@ -346,7 +346,26 @@ Mappatura:
 
 ## 8. Wiply Assistant – fase 1b sul nuovo modello
 
-Primo prodotto a nascere sul modello, prima ancora che l'Account sia completo:
+Primo prodotto a nascere sul modello, prima ancora che l'Account sia completo.
+
+**Accorpamento (deciso):** oggi esistono due fork, `assistant` e `wiply-voice`; tutto verrà
+accorpato in `assistant`. Proposta d'ordine: login e tenant della fase 1b si fanno direttamente
+in `assistant`, così `wiply-voice` confluisce in un codice che ha già il modello giusto
+(una sola migrazione invece di due).
+
+**Archiviazione su S3 con chiave KMS (deciso).** Proposte di dettaglio:
+- bucket nella regione di Parigi (`eu-west-3`), accesso pubblico bloccato, cifratura SSE-KMS
+  con chiave gestita da noi;
+- file organizzati per tenant (`tenant/<id>/...`) e contesto di cifratura con l'id del tenant,
+  così un tenant non può mai leggere i file di un altro, nemmeno per errore nel codice;
+- valutare **una chiave KMS per organizzazione** (circa 1 $ al mese ciascuna): alla cancellazione
+  definitiva di un servizio basta eliminare la chiave e tutti i file diventano illeggibili
+  ("crypto-shredding"). AWS attende da 7 a 30 giorni prima di eliminare una chiave, il che si
+  sposa con i 30 giorni di ripensamento decisi (sez. 6.5);
+- registrazioni del centralino e documenti della base di conoscenza con scadenza automatica
+  configurabile per tenant.
+
+Passi della fase 1b:
 
 1. Login con Keycloak (client OIDC `assistant` nel realm `wiply`) al posto della password unica.
 2. Ogni tenant di `assistant-db` viene collegato a un'**organizzazione Keycloak** (colonna `keycloak_org_id`).
@@ -437,8 +456,10 @@ sessione dedicata; qui solo i principi che lo rendono compatibile con l'end-to-e
 - **Un bot che legge una chat la rende leggibile dai nostri server** (il bot è un partecipante e
   manda i testi all'AI tramite LiteLLM). Va detto chiaramente: in una chat con un bot non vale
   "nemmeno noi possiamo leggerla" per i messaggi che il bot riceve.
-- Il bot entra **solo su invito**, è sempre visibile come membro con un'etichetta "AI", e nei
-  gruppi tutti i partecipanti vengono avvisati quando entra; può essere tolto in ogni momento.
+- I bot **non li mandiamo noi**: li chiedono e li aggiungono gli utenti, che decidono di ammetterli
+  conoscendone i rischi. Al momento dell'invito un avviso breve spiega cosa il bot può leggere.
+- Il bot è sempre visibile come membro con un'etichetta "AI", nei gruppi tutti i partecipanti
+  vengono avvisati quando entra, e può essere tolto in ogni momento.
 - Preferibile che il bot elabori **solo i messaggi rivolti a lui** (menzione o comando), non tutta la chat.
 - Nessuna conservazione dei testi oltre il necessario; nessun uso per addestrare modelli.
 - Minori: bot solo se il genitore lo autorizza e se le regole d'età dei servizi AI lo permettono.
