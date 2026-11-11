@@ -1,6 +1,6 @@
 # Wiply Account – documento di progetto
 
-> Stato: **bozza v0.6** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
+> Stato: **bozza v0.7** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
 > Repository: `WiplyCorp/accountfederation`
 
 Questo documento descrive il sistema di account unico per tutti i prodotti Wiply:
@@ -25,7 +25,7 @@ all'Account: *"questa persona, in questo contesto, ha diritto a questo servizio,
 | Prodotto | Indirizzo | Oggi | Domani |
 |---|---|---|---|
 | Cassy AI | cassy.wiply.net | LibreChat + LiteLLM, login Keycloak, piani venduti dal social | Personale o federato (contesto azienda), limiti per utente via LiteLLM |
-| Wiply Assistant | assistant.wiply.net | Due fork: `assistant` e `wiply-voice`; password unica per il pannello, tenant su PostgreSQL | Tutto accorpato in `assistant`; file su S3 cifrati con KMS; fase 1b: login Keycloak, tenant = organizzazione, ruoli |
+| Wiply Assistant | assistant.wiply.net | Un solo prodotto con canali attivabili (telefono Twilio, chat sui siti con plugin WordPress; poi WhatsApp ed email), stessa conoscenza per tutti; password unica per il pannello, tenant su PostgreSQL | `wiply-voice` confluisce in `assistant`; file su S3 cifrati con KMS; fase 1b: login Keycloak, tenant = organizzazione, ruoli |
 | Social | wiply.net | Sngine con utenti e pagamenti propri | Fork autonomo collegato al login unico (ultimo passo) |
 | Narendi | – | Server di messaggistica su Matrix, chiuso (nessuna federazione con altri server, come Signal) | Login unico con Keycloak; chat private end-to-end per tutti (sez. 9.1); bot AI su invito (sez. 9.2) |
 | Wiply Studio | – | – | Servizio attivabile dall'Account |
@@ -348,10 +348,11 @@ Mappatura:
 
 Primo prodotto a nascere sul modello, prima ancora che l'Account sia completo.
 
-**Accorpamento (deciso):** oggi esistono due fork, `assistant` e `wiply-voice`; tutto verrà
-accorpato in `assistant`. Proposta d'ordine: login e tenant della fase 1b si fanno direttamente
-in `assistant`, così `wiply-voice` confluisce in un codice che ha già il modello giusto
-(una sola migrazione invece di due).
+**Prodotto unico (deciso):** Wiply Assistant è un solo prodotto con canali attivabili per azienda
+(telefono, chat sui siti, in futuro WhatsApp ed email), con la stessa conoscenza e gli stessi appunti.
+Il fork `wiply-voice` confluisce in `assistant`: non ha utenti, quindi **nessuna migrazione di dati**.
+Login e tenant della fase 1b si fanno direttamente in `assistant`.
+Per l'Account ogni canale può diventare un'opzione del servizio `assistant` (es. `limits.channels`).
 
 **Archiviazione su S3 con chiave KMS (deciso).** Proposte di dettaglio:
 - bucket nella regione di Parigi (`eu-west-3`), accesso pubblico bloccato, cifratura SSE-KMS
