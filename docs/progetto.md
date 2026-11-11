@@ -1,6 +1,6 @@
 # Wiply Account – documento di progetto
 
-> Stato: **bozza v0.4** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
+> Stato: **bozza v0.5** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
 > Repository: `WiplyCorp/accountfederation`
 
 Questo documento descrive il sistema di account unico per tutti i prodotti Wiply:
@@ -27,7 +27,7 @@ all'Account: *"questa persona, in questo contesto, ha diritto a questo servizio,
 | Cassy AI | cassy.wiply.net | LibreChat + LiteLLM, login Keycloak, piani venduti dal social | Personale o federato (contesto azienda), limiti per utente via LiteLLM |
 | Wiply Assistant | assistant.wiply.net | Password unica per il pannello, tenant su PostgreSQL | Fase 1b: login Keycloak, tenant = organizzazione, ruoli |
 | Social | wiply.net | Sngine con utenti e pagamenti propri | Fork autonomo collegato al login unico (ultimo passo) |
-| Narendi | – | Server di messaggistica su Matrix | Login unico con Keycloak; chat private end-to-end per tutti (sez. 9.1) |
+| Narendi | – | Server di messaggistica su Matrix, chiuso (nessuna federazione con altri server, come Signal) | Login unico con Keycloak; chat private end-to-end per tutti (sez. 9.1); bot AI su invito (sez. 9.2) |
 | Wiply Studio | – | – | Servizio attivabile dall'Account |
 | SaaS futuri (gestionale…) | – | – | Nascono già sul modello Account |
 
@@ -205,7 +205,7 @@ Le chat private dei minori sono end-to-end come quelle di tutti (sez. 9.1): ness
 **Regole strette sui contatti dei minori (deciso)**, applicate da Narendi e dal social:
 - un minore riceve messaggi e inviti **solo da contatti approvati dal genitore**; niente messaggi
   da sconosciuti, nessuna richiesta in attesa visibile al minore senza approvazione;
-- niente stanze pubbliche o federate con server esterni, salvo autorizzazione esplicita del genitore;
+- niente stanze pubbliche, salvo autorizzazione esplicita del genitore (Narendi è comunque chiuso: nessun server esterno);
 - profilo privato e non ricercabile per default; nessuna pubblicità profilata;
 - tasto "segnala" sempre visibile: l'app del minore invia a Wiply la conversazione segnalata
   (unico modo in cui vediamo un contenuto privato), il genitore riceve l'avviso senza il contenuto;
@@ -421,7 +421,22 @@ nella versione approvata dal Consiglio a fine 2025 la scansione dei messaggi è 
 Se l'obbligo dovesse tornare, la scelta va rivista.
 
 **Da verificare su Narendi:** cifratura attiva per default, dati e log conservati e per quanto,
-federazione con server esterni (e blocco per i minori), collegamento a Keycloak.
+federazione effettivamente disattivata, collegamento a Keycloak.
+
+### 9.2 Bot AI nelle chat di Narendi (idea, da sviluppare a parte)
+
+Bot AI (supporto, assistenza) invitabili nelle chat personali e di gruppo. Da progettare in una
+sessione dedicata; qui solo i principi che lo rendono compatibile con l'end-to-end:
+- **Un bot che legge una chat la rende leggibile dai nostri server** (il bot è un partecipante e
+  manda i testi all'AI tramite LiteLLM). Va detto chiaramente: in una chat con un bot non vale
+  "nemmeno noi possiamo leggerla" per i messaggi che il bot riceve.
+- Il bot entra **solo su invito**, è sempre visibile come membro con un'etichetta "AI", e nei
+  gruppi tutti i partecipanti vengono avvisati quando entra; può essere tolto in ogni momento.
+- Preferibile che il bot elabori **solo i messaggi rivolti a lui** (menzione o comando), non tutta la chat.
+- Nessuna conservazione dei testi oltre il necessario; nessun uso per addestrare modelli.
+- Minori: bot solo se il genitore lo autorizza e se le regole d'età dei servizi AI lo permettono.
+- Consumi (token) addebitati a chi ha invitato il bot o alla sua organizzazione, tramite l'Account
+  (servizio `narendi-ai`).
 
 ```
 lawful_access_request
