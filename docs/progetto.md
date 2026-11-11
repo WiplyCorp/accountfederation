@@ -1,6 +1,6 @@
 # Wiply Account – documento di progetto
 
-> Stato: **bozza v0.2** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
+> Stato: **bozza v0.3** (11 novembre 2026) · Responsabile: CEO Wiply Corp OÜ
 > Repository: `WiplyCorp/accountfederation`
 
 Questo documento descrive il sistema di account unico per tutti i prodotti Wiply:
@@ -180,18 +180,26 @@ consenso dei genitori**; in UE si discute un'età minima per i social uguale per
 1. Alla registrazione Keycloak chiede la data di nascita e il Paese.
 2. Se l'età è sotto `age_alone` per tutti i servizi richiesti, l'account nasce **in attesa del genitore**:
    il ragazzo inserisce l'email del genitore, che riceve un invito.
-3. Il genitore entra (o si registra) e **dimostra di essere maggiorenne**: proposta minima con
-   una verifica della carta su Stripe (senza addebito); in futuro, verifica d'identità o il
-   portafoglio d'identità digitale europeo.
+3. Il genitore entra (o si registra) e **dimostra di essere maggiorenne** tramite un servizio
+   esterno di verifica dell'età (es. AgeVerif), vedi sotto.
 4. Il genitore sceglie servizio per servizio cosa autorizzare e con quali limiti. Ogni consenso
    viene registrato (chi, quando, versione delle condizioni, metodo di verifica) e si può revocare.
 5. Al compimento di `age_alone` il ragazzo viene avvisato e l'account diventa **autonomo**: il
    genitore perde la supervisione, i dati restano del ragazzo. Se il genitore pagava, l'abbonamento
    resta sul conto del genitore finché uno dei due non lo sposta.
 
-**Supervisione, non sorveglianza.** Proposta: il genitore vede consumi, tempo d'uso, contatti e
-segnalazioni, ma non legge i messaggi privati, salvo segnalazioni di sicurezza. Da decidere con il legale
-(decisione aperta 8).
+**Verifica dell'età con servizi esterni (deciso).** L'Account non verifica documenti da sé: rimanda
+a un fornitore esterno (es. AgeVerif) che conferma "maggiorenne sì/no" e restituisce l'esito firmato.
+- Il codice parla con un'interfaccia unica (`age_verification_provider`), così si può cambiare
+  fornitore o aggiungerne altri (es. il portafoglio d'identità digitale europeo) senza toccare il resto.
+- L'Account salva **solo l'esito**: fornitore, metodo, risultato, data, riferimento della verifica.
+  Nessun documento, selfie o data di nascita del genitore passa da noi.
+- Lo stesso servizio si può usare dove la legge chiede di verificare l'età anche dei ragazzi
+  (es. per confermare che non siano sotto il minimo assoluto).
+
+**Supervisione, non sorveglianza (deciso).** Il genitore vede consumi, tempo d'uso, contatti e
+segnalazioni di sicurezza (senza contenuto), ma **non legge mai i messaggi privati**. I messaggi
+privati si aprono solo con la procedura di accesso legale della sezione 9.1, uguale per tutti gli utenti.
 
 **Dati in più nel modello**
 ```
@@ -202,6 +210,9 @@ age_rule        country, service_code, age_alone, age_with_consent, source, revi
 guardian_consent
   id, guardian_person_id, minor_person_id, service_code, limits (jsonb),
   terms_version, verification_method, granted_at, revoked_at
+age_verification
+  id, person_id, provider, method, result (adult|not_adult|failed),
+  provider_reference, verified_at
 ```
 Nella risposta `entitlements` compare `"supervised": true` con i limiti del genitore, così ogni
 prodotto applica le impostazioni per minori (es. nel social: profilo privato, niente messaggi da sconosciuti).
@@ -360,6 +371,48 @@ Altre regole:
 - ogni azione di amministrazione finisce in `audit_log`;
 - dati in UE (Parigi), coerente con il GDPR.
 
+### 9.1 Accesso legale ai messaggi privati (deciso)
+
+**Regola:** i messaggi privati (social, e in futuro le chat di Cassy) sono cifrati con una chiave
+personale dell'utente. Nessuno, né il genitore né il personale Wiply, li legge nell'uso normale.
+Si aprono **solo** su richiesta ufficiale con valide ragioni legali, di preferenza un
+provvedimento di un tribunale.
+
+**Come funziona tecnicamente (proposta): seconda serratura, non sostituzione della chiave.**
+- Ogni utente ha una chiave dati personale. Questa chiave viene chiusa due volte:
+  1. con la chiave dell'utente (uso normale);
+  2. con una **chiave di accesso legale** di Wiply, che non sta su nessun server.
+- La chiave di accesso legale è divisa in parti (schema "2 su 3"): ad esempio una al CEO,
+  una al legale/DPO, una in cassetta di sicurezza. Servono almeno due persone insieme per usarla.
+  Nessuno da solo, e nessun attacco a un solo server, può aprire i messaggi.
+- Non si "sovrascrive" la chiave dell'utente: sovrascriverla gli farebbe perdere l'accesso ai
+  propri messaggi e lascerebbe traccia evidente. La seconda serratura apre senza toccare la sua.
+
+**Procedura**
+1. Arriva la richiesta (provvedimento del tribunale o ordine europeo di produzione delle prove,
+   regolamento UE 2023/1543 "e-Evidence"). Viene registrata in `lawful_access_request`.
+2. Il legale verifica validità, autorità, perimetro (quale utente, quali conversazioni, quale periodo).
+   Richieste senza base legale valida vengono respinte e registrate.
+3. Due custodi della chiave aprono **solo** il perimetro richiesto, su una macchina isolata.
+4. Si consegna all'autorità solo quanto richiesto; tutto finisce in un registro non modificabile.
+5. L'utente viene avvisato a pratica chiusa, salvo divieto dell'autorità.
+6. Statistiche annuali (numero di richieste ricevute, accolte, respinte) pubblicate in un rapporto
+   di trasparenza.
+
+**Cosa comporta**
+- Non potremo dire che i messaggi sono "cifrati end-to-end" in senso stretto: andrà scritto con
+  chiarezza nell'informativa privacy (cifrati, apribili solo con la procedura legale).
+- La seconda serratura va prevista **fin dalla nascita** della messaggistica nel fork del social:
+  aggiungerla dopo vorrebbe dire ricifrare tutti i messaggi.
+- Tempi di risposta e casi d'urgenza (e-Evidence prevede termini stretti) da definire col legale.
+
+```
+lawful_access_request
+  id, authority, legal_basis, document_ref, received_at,
+  scope (jsonb: person, conversazioni, periodo), legal_review_by, decision (accepted|rejected),
+  custodians[], executed_at, delivered_at, user_notified_at, notes
+```
+
 ## 10. Migrazione da Cassy sul social (decisione aperta 3)
 
 Proposta in tre passi:
@@ -390,8 +443,8 @@ Proposta in tre passi:
 | 5 | Cassy federato: più contesti in LibreChat | Prova tecnica prima della fase 4 | da verificare |
 | 6 | Se l'Account non risponde | Cache fino a 15 minuti, poi blocco delle funzioni a pagamento | **deciso** |
 | 7 | PayPal | Solo se richiesto dai clienti, dopo il lancio di Stripe | da decidere |
-| 8 | Minori: età per Paese e servizio, cosa vede il genitore | Account famiglia (sez. 4.2); tabella d'età compilata da un legale; supervisione senza lettura dei messaggi privati | da verificare con un legale |
-| 9 | Verifica che il genitore sia maggiorenne | Verifica carta su Stripe senza addebito; poi identità digitale UE | da decidere |
+| 8 | Minori: cosa vede il genitore | Mai i messaggi privati; apertura solo con procedura di accesso legale (sez. 9.1). Tabella d'età per Paese ancora da far compilare a un legale | **deciso** (tabella d'età: da fare) |
+| 9 | Verifica che il genitore sia maggiorenne | Servizi esterni (es. AgeVerif), interfaccia unica, salviamo solo l'esito | **deciso** |
 
 ## 13. Ordine di lavoro
 
